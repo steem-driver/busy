@@ -4,6 +4,12 @@ import secureRandom from 'secure-random';
 import diff_match_patch from 'diff-match-patch';
 import steemAPI from '../steemAPI';
 import formatter from '../helpers/steemitFormatter';
+import _ from 'lodash';
+import {
+  HF21_TIME,
+  DEFAULT_CURATION_REWARD_PERCENT,
+  HF21_CURATION_REWARD_PERCENT,
+} from '../helpers/constants';
 
 const dmp = new diff_match_patch();
 /**
@@ -42,7 +48,7 @@ export function parsePayoutAmount(amount) {
  */
 export const calculatePayout = post => {
   const payoutDetails = {};
-  const { active_votes, parent_author, cashout_time } = post;
+  const { active_votes, parent_author, cashout_time, last_payout } = post;
 
   const max_payout = parsePayoutAmount(post.max_accepted_payout);
   const pending_payout = parsePayoutAmount(post.pending_payout_value);
@@ -81,10 +87,51 @@ export const calculatePayout = post => {
     payoutDetails.maxAcceptedPayout = max_payout;
   }
 
-  if (total_author_payout > 0) {
-    payoutDetails.pastPayouts = total_author_payout + total_curator_payout;
+  // payout should be used instead of total_author_payout for 100% beneficiary case (e.g., @finex)
+  if (payout > 0) {
+    // this is not actual total past payout. use totalPastPayouts below.
+    //payoutDetails.pastPayouts = total_author_payout + total_curator_payout;
     payoutDetails.authorPayouts = total_author_payout;
     payoutDetails.curatorPayouts = total_curator_payout;
+  }
+
+  // if beneficiaries is set, estimate totalPostPayouts based on author:curator ratio
+  const beneficiaries = _.get(post, 'beneficiaries', []);
+  if (_.isEmpty(beneficiaries)) {
+    payoutDetails.beneficiariesPayouts = 0;
+    payoutDetails.totalPastPayouts = total_author_payout + total_curator_payout;
+  } else {
+    // HF21 50:50 was applied based on last_payout (not created)
+    const curationRewardPercent =
+      last_payout < HF21_TIME ? DEFAULT_CURATION_REWARD_PERCENT : HF21_CURATION_REWARD_PERCENT;
+
+    // 100% = 1
+    const total_beneficiaries_ratio =
+      _.reduce(
+        beneficiaries,
+        (total, current) => {
+          return total + current.weight;
+        },
+        0,
+      ) / 10000;
+
+    // beneficiariesPayouts estimation
+    // Improved: exact value when total_beneficiaries_ratio < 1. Estimate as follows otherwise.
+    // - curatorPayouts multiplied by author:curator ratio (e.g., (100-25)/25=3 before HF21)
+    // - and then multiplied by total beneficiaries ratio (e.g., if 50%, half of the above amount is beneficiariesPayouts and the other half is authorPayouts)
+    if (total_beneficiaries_ratio < 1) {
+      payoutDetails.beneficiariesPayouts =
+        total_beneficiaries_ratio / (1 - total_beneficiaries_ratio) * total_author_payout;
+    } else {
+      payoutDetails.beneficiariesPayouts =
+        total_curator_payout *
+        (100 - curationRewardPercent) /
+        curationRewardPercent *
+        total_beneficiaries_ratio;
+    }
+
+    payoutDetails.totalPastPayouts =
+      total_author_payout + total_curator_payout + payoutDetails.beneficiariesPayouts;
   }
 
   return payoutDetails;

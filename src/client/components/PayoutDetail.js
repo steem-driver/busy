@@ -39,13 +39,14 @@ const getBeneficiariesPercent = user => {
   return <FormattedNumber value={_.isNan(weight) ? 0 : weight} style="percent" />;
 };
 
-const getBeneficaries = post => {
+const getBeneficiaries = post => {
   const beneficiaries = _.get(post, 'beneficiaries', []);
 
   if (_.isEmpty(beneficiaries)) return null;
 
   return _.map(beneficiaries, user => (
     <p key={user.account}>
+      {' - '}
       <Link to={`/@${user.account}`}>{user.account}</Link>{' '}
       <span style={{ opacity: '0.5' }}>{getBeneficiariesPercent(user)}</span>
     </p>
@@ -59,11 +60,12 @@ const PayoutDetail = ({ intl, post }) => {
     promotionCost,
     cashoutInTime,
     isPayoutDeclined,
-    pastPayouts,
     authorPayouts,
     curatorPayouts,
+    beneficiariesPayouts,
+    totalPastPayouts,
   } = calculatePayout(post);
-  const beneficaries = getBeneficaries(post);
+  const beneficiaries = getBeneficiaries(post);
 
   if (isPayoutDeclined) {
     return <FormattedMessage id="payout_declined" defaultMessage="Payout declined" />;
@@ -90,7 +92,8 @@ const PayoutDetail = ({ intl, post }) => {
             defaultMessage="Potential Payout: {amount}"
             amount={potentialPayout}
           />
-          {beneficaries}
+          {beneficiaries && <FormattedMessage id="beneficiaries" defaultMessage="Beneficiaries" />}
+          {beneficiaries}
           <FormattedMessage
             id="payout_will_release_in_time"
             defaultMessage="Will release {time}"
@@ -102,8 +105,16 @@ const PayoutDetail = ({ intl, post }) => {
           <AmountWithLabel
             id="payout_total_past_payout_amount"
             defaultMessage="Total Past Payouts: {amount}"
-            amount={pastPayouts}
+            amount={totalPastPayouts}
           />
+          {beneficiaries && (
+            <AmountWithLabel
+              id="payout_beneficiaries_payout_amount"
+              defaultMessage="Beneficiaries payout: {amount}"
+              amount={beneficiariesPayouts}
+            />
+          )}
+          {beneficiaries}
           <AmountWithLabel
             id="payout_author_payout_amount"
             defaultMessage="Author Payout: {amount}"
